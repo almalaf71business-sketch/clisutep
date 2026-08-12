@@ -7,6 +7,11 @@ on:
         description: "موضوع الفيديو؛ اتركه فارغًا لاستخدام موضوع تلقائي"
         required: false
         type: string
+      preview_only:
+        description: "إنشاء نسخة تجريبية بدون رفعها إلى YouTube"
+        required: false
+        default: true
+        type: boolean
   schedule:
     - cron: "0 15 * * *"
 
@@ -21,6 +26,7 @@ jobs:
         working-directory: damagh-masry
     env:
       TOPIC: ${{ inputs.topic || 'أداة ذكاء اصطناعي مجانية مفيدة للمصريين' }}
+      TTS_VOICE: ar-EG-ShakirNeural
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-3.6-flash' }}
       GOOGLE_YOUTUBE_CLIENT_ID: ${{ secrets.GOOGLE_YOUTUBE_CLIENT_ID }}
@@ -35,18 +41,25 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install video tools
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Install video and voice tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu espeak-ng
+          sudo apt-get install -y ffmpeg fonts-noto-core
+          python -m pip install --disable-pip-version-check edge-tts==7.2.7
 
       - name: Generate Egyptian Arabic content
         run: node automation/generate_content.mjs
 
-      - name: Render MP4
+      - name: Render polished MP4
         run: node automation/render_video.mjs
 
       - name: Upload as private YouTube video
+        if: ${{ github.event_name == 'schedule' || inputs.preview_only == false }}
         run: node automation/upload_youtube.mjs
 
       - name: Save generated files for review
