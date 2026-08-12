@@ -1,0 +1,57 @@
+name: دماغ مصري - Generate and upload private video
+
+on:
+  workflow_dispatch:
+    inputs:
+      topic:
+        description: "موضوع الفيديو؛ اتركه فارغًا لاستخدام موضوع تلقائي"
+        required: false
+        type: string
+  schedule:
+    - cron: "0 15 * * *"
+
+permissions:
+  contents: read
+
+jobs:
+  create-private-video:
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: damagh-masry
+    env:
+      TOPIC: ${{ inputs.topic || 'أداة ذكاء اصطناعي مجانية مفيدة للمصريين' }}
+      GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
+      GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-2.0-flash' }}
+      GOOGLE_YOUTUBE_CLIENT_ID: ${{ secrets.GOOGLE_YOUTUBE_CLIENT_ID }}
+      GOOGLE_YOUTUBE_CLIENT_SECRET: ${{ secrets.GOOGLE_YOUTUBE_CLIENT_SECRET }}
+      YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Install video tools
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y ffmpeg fonts-dejavu espeak-ng
+
+      - name: Generate Egyptian Arabic content
+        run: node automation/generate_content.mjs
+
+      - name: Render MP4
+        run: node automation/render_video.mjs
+
+      - name: Upload as private YouTube video
+        run: node automation/upload_youtube.mjs
+
+      - name: Save generated files for review
+        uses: actions/upload-artifact@v4
+        with:
+          name: damagh-masry-video-${{ github.run_number }}
+          path: damagh-masry/work/
+          retention-days: 14
