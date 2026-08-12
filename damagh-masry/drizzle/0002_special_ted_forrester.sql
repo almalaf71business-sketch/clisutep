@@ -1,0 +1,1 @@
+ALTER TABLE `video_contents` ADD `topic` varchar(180) NOT NULL;

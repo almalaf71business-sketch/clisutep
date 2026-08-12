@@ -1,0 +1,34 @@
+@import url('https://fonts.googleapis.com/css2?family=Cairo:wght@400;500;600;700;800;900&family=IBM+Plex+Sans+Arabic:wght@400;500;600;700&display=swap');
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@theme inline {
+  --font-sans: 'IBM Plex Sans Arabic', sans-serif;
+  --font-display: 'Cairo', sans-serif;
+  --color-background: #f6f7f4;
+  --color-foreground: #17241f;
+  --color-card: #ffffff;
+  --color-card-foreground: #17241f;
+  --color-primary: #17241f;
+  --color-primary-foreground: #ffffff;
+  --color-muted: #eef1ed;
+  --color-muted-foreground: #718079;
+  --color-border: #dfe5df;
+  --color-input: #dfe5df;
+  --color-ring: #ef6f51;
+  --radius: 0.85rem;
+}
+
+:root { font-family: 'IBM Plex Sans Arabic', sans-serif; color: #17241f; background: #f6f7f4; font-synthesis: none; text-rendering: optimizeLegibility; }
+* { border-color: #dfe5df; }
+body { margin: 0; min-width: 320px; background: #f6f7f4; }
+button, input, textarea, select { font: inherit; }
+button { cursor: pointer; }
+.nav-item, .nav-active { display: flex; align-items: center; gap: .75rem; border-radius: .85rem; padding: .8rem 1rem; font-size: .95rem; font-weight: 600; transition: background .18s ease, color .18s ease, transform .18s ease; }
+.nav-item { color: rgba(255,255,255,.55); }
+.nav-item:hover { background: rgba(255,255,255,.07); color: #fff; transform: translateX(-2px); }
+.nav-active { background: #ef6f51; color: #fff; box-shadow: 0 12px 24px rgba(239,111,81,.2); }
+::-webkit-scrollbar { width: 8px; height: 8px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd4cc; border-radius: 999px; }
+::selection { background: #ef6f51; color: #fff; }
