@@ -37,7 +37,7 @@ const splitScenes = (script) => {
 
 await fs.mkdir("work/scenes", { recursive: true });
 await fs.writeFile("work/voice.txt", clean(content.script));
-await exec("edge-tts", ["--voice", voice, "--rate=-4%", "--pitch=-2Hz", "--text-file", "work/voice.txt", "--write-media", "work/voice.mp3"]);
+await exec("edge-tts", ["--voice", voice, "--rate=-4%", "--pitch=-2Hz", "--file", "work/voice.txt", "--write-media", "work/voice.mp3"]);
 
 const probe = await exec("ffprobe", ["-v", "error", "-show_entries", "format=duration", "-of", "default=noprint_wrappers=1:nokey=1", "work/voice.mp3"]);
 const duration = Math.max(1, Number.parseFloat(probe.stdout.trim()));
