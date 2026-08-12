@@ -22,7 +22,7 @@ jobs:
     env:
       TOPIC: ${{ inputs.topic || 'أداة ذكاء اصطناعي مجانية مفيدة للمصريين' }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
-      GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-2.0-flash' }}
+      GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-3.6-flash' }}
       GOOGLE_YOUTUBE_CLIENT_ID: ${{ secrets.GOOGLE_YOUTUBE_CLIENT_ID }}
       GOOGLE_YOUTUBE_CLIENT_SECRET: ${{ secrets.GOOGLE_YOUTUBE_CLIENT_SECRET }}
       YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}

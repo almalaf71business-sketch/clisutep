@@ -2,7 +2,7 @@ import fs from "node:fs/promises";
 
 const topic = process.env.TOPIC?.trim();
 const apiKey = process.env.GEMINI_API_KEY?.trim();
-const model = process.env.GEMINI_MODEL || "gemini-2.0-flash";
+const model = process.env.GEMINI_MODEL || "gemini-3.6-flash";
 
 if (!topic) throw new Error("TOPIC is required");
 if (!apiKey) throw new Error("GEMINI_API_KEY is required");
