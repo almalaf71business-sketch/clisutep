@@ -58,11 +58,22 @@ if (manual) {
   console.log(authUrl.toString());
   console.log("\nAfter approval, copy the full browser URL and paste it below.");
   const rl = createInterface({ input, output });
-  const callbackUrl = await rl.question("Callback URL: ");
+  const pasted = (await rl.question("Callback URL or code: ")).trim();
   rl.close();
-  const parsed = new URL(callbackUrl.trim());
-  const error = parsed.searchParams.get("error");
-  const code = parsed.searchParams.get("code");
+
+  let error = null;
+  let code = null;
+  if (pasted.startsWith("http://") || pasted.startsWith("https://")) {
+    const parsed = new URL(pasted);
+    error = parsed.searchParams.get("error");
+    code = parsed.searchParams.get("code");
+  } else if (pasted.includes("code=")) {
+    const query = pasted.slice(pasted.indexOf("code=") + "code=".length);
+    code = decodeURIComponent(query.split("&")[0]);
+  } else {
+    code = pasted.split("&")[0];
+  }
+
   if (error || !code) throw new Error(`Google authorization failed: ${error || "missing code"}`);
   await exchangeCode(code);
   process.exit(0);
