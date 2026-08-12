@@ -32,18 +32,15 @@ authUrl.search = new URLSearchParams({
 
 const server = http.createServer(async (request, response) => {
   const requestUrl = new URL(request.url || "/", redirectUri);
-  if (requestUrl.pathname !== new URL(redirectUri).pathname) {
-    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
-    response.end("Not found");
-    return;
-  }
+  console.log(`Incoming OAuth callback: ${requestUrl.pathname}`);
 
+  // Codespaces proxies can preserve the query while normalizing the path.
+  // Treat any request carrying Google's code/error as the OAuth callback.
   const error = requestUrl.searchParams.get("error");
   const code = requestUrl.searchParams.get("code");
   if (error || !code) {
-    response.writeHead(400, { "content-type": "text/plain; charset=utf-8" });
-    response.end(`Google authorization failed: ${error || "missing code"}`);
-    server.close();
+    response.writeHead(404, { "content-type": "text/plain; charset=utf-8" });
+    response.end("OAuth server is running. Open the Google authorization URL printed in the Codespaces terminal.");
     return;
   }
 
