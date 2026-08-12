@@ -63,13 +63,13 @@ if (manual) {
 
   let error = null;
   let code = null;
-  if (pasted.startsWith("http://") || pasted.startsWith("https://")) {
+  if (pasted.includes("code=")) {
+    const query = pasted.slice(pasted.indexOf("code=") + "code=".length);
+    code = decodeURIComponent(query.split("&")[0]);
+  } else if (pasted.startsWith("http://") || pasted.startsWith("https://")) {
     const parsed = new URL(pasted);
     error = parsed.searchParams.get("error");
     code = parsed.searchParams.get("code");
-  } else if (pasted.includes("code=")) {
-    const query = pasted.slice(pasted.indexOf("code=") + "code=".length);
-    code = decodeURIComponent(query.split("&")[0]);
   } else {
     code = pasted.split("&")[0];
   }
