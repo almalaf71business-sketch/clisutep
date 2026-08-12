@@ -1,6 +1,12 @@
 name: دماغ مصري - Generate and upload private video
 
 on:
+  push:
+    branches:
+      - agent/improve-damagh-masry-video
+    paths:
+      - "damagh-masry/automation/**"
+      - ".github/workflows/damagh-masry.yml"
   workflow_dispatch:
     inputs:
       topic:
@@ -59,7 +65,7 @@ jobs:
         run: node automation/render_video.mjs
 
       - name: Upload as private YouTube video
-        if: ${{ github.event_name == 'schedule' || inputs.preview_only == false }}
+        if: ${{ github.event_name == 'schedule' || (github.event_name == 'workflow_dispatch' && inputs.preview_only == false) }}
         run: node automation/upload_youtube.mjs
 
       - name: Save generated files for review
