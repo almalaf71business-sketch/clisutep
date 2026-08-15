@@ -20,7 +20,7 @@ import (
 	completionCmd "github.com/cli/cli/v2/pkg/cmd/completion"
 	configCmd "github.com/cli/cli/v2/pkg/cmd/config"
 	copilotCmd "github.com/cli/cli/v2/pkg/cmd/copilot"
-	extensionCmd "github.com/cli/cli/v2/pkg/cmd/extension"
+extensionCmd "github.com/cli/cli/v2/pkg/cmd/extension"
 	"github.com/cli/cli/v2/pkg/cmd/factory"
 	gistCmd "github.com/cli/cli/v2/pkg/cmd/gist"
 	gpgKeyCmd "github.com/cli/cli/v2/pkg/cmd/gpg-key"
@@ -37,6 +37,7 @@ import (
 	runCmd "github.com/cli/cli/v2/pkg/cmd/run"
 	searchCmd "github.com/cli/cli/v2/pkg/cmd/search"
 	secretCmd "github.com/cli/cli/v2/pkg/cmd/secret"
+	shortsCmd "github.com/cli/cli/v2/pkg/cmd/shorts"
 	sshKeyCmd "github.com/cli/cli/v2/pkg/cmd/ssh-key"
 	statusCmd "github.com/cli/cli/v2/pkg/cmd/status"
 	variableCmd "github.com/cli/cli/v2/pkg/cmd/variable"
@@ -75,7 +76,6 @@ func NewCmdRoot(f *cmdutil.Factory, version, buildDate string) (*cobra.Command, 
 			"versionInfo": versionCmd.Format(version, buildDate),
 		},
 		PersistentPreRunE: func(cmd *cobra.Command, args []string) error {
-			// require that the user is authenticated before running most commands
 			if cmdutil.IsAuthCheckEnabled(cmd) && !cmdutil.CheckAuth(cfg) {
 				parent := cmd.Parent()
 				if parent != nil && parent.Use == "codespace" {
@@ -89,19 +89,12 @@ func NewCmdRoot(f *cmdutil.Factory, version, buildDate string) (*cobra.Command, 
 		},
 	}
 
-	// cmd.SetOut(f.IOStreams.Out)    // can't use due to https://github.com/spf13/cobra/issues/1708
-	// cmd.SetErr(f.IOStreams.ErrOut) // just let it default to os.Stderr instead
-
 	cmd.PersistentFlags().Bool("help", false, "Show help for command")
 
-	// override Cobra's default behaviors unless an opt-out has been set
 	if os.Getenv("GH_COBRA") == "" {
 		cmd.SilenceErrors = true
 		cmd.SilenceUsage = true
-
-		// this --version flag is checked in rootHelpFunc
 		cmd.Flags().Bool("version", false, "Show gh version")
-
 		cmd.SetHelpFunc(func(c *cobra.Command, args []string) {
 			rootHelpFunc(f, c, args)
 		})
@@ -111,18 +104,9 @@ func NewCmdRoot(f *cmdutil.Factory, version, buildDate string) (*cobra.Command, 
 		cmd.SetFlagErrorFunc(rootFlagErrorFunc)
 	}
 
-	cmd.AddGroup(&cobra.Group{
-		ID:    "core",
-		Title: "Core commands",
-	})
-	cmd.AddGroup(&cobra.Group{
-		ID:    "actions",
-		Title: "GitHub Actions commands",
-	})
-	cmd.AddGroup(&cobra.Group{
-		ID:    "extension",
-		Title: "Extension commands",
-	})
+	cmd.AddGroup(&cobra.Group{ID: "core", Title: "Core commands"})
+	cmd.AddGroup(&cobra.Group{ID: "actions", Title: "GitHub Actions commands"})
+	cmd.AddGroup(&cobra.Group{ID: "extension", Title: "Extension commands"})
 
 	// Child commands
 	cmd.AddCommand(versionCmd.NewCmdVersion(f, version, buildDate))
@@ -143,6 +127,7 @@ func NewCmdRoot(f *cmdutil.Factory, version, buildDate string) (*cobra.Command, 
 	cmd.AddCommand(codespaceCmd.NewCmdCodespace(f))
 	cmd.AddCommand(projectCmd.NewCmdProject(f))
 	cmd.AddCommand(previewCmd.NewCmdPreview(f))
+	cmd.AddCommand(shortsCmd.NewCmdShorts(f))
 
 	// Root commands with standalone functionality and no subcommands
 	cmd.AddCommand(copilotCmd.NewCmdCopilot(f, nil))
@@ -172,8 +157,6 @@ func NewCmdRoot(f *cmdutil.Factory, version, buildDate string) (*cobra.Command, 
 	for _, ht := range HelpTopics {
 		helpTopicCmd := NewCmdHelpTopic(f.IOStreams, ht)
 		cmd.AddCommand(helpTopicCmd)
-
-		// See bottom of the function for why we explicitly care about the reference cmd
 		if ht.name == "reference" {
 			referenceCmd = helpTopicCmd
 		}
@@ -183,13 +166,10 @@ func NewCmdRoot(f *cmdutil.Factory, version, buildDate string) (*cobra.Command, 
 	em := f.ExtensionManager
 	for _, e := range em.List() {
 		extensionCmd := NewCmdExtension(io, em, e, nil)
-		// Don't register an extension command if it would
-		// conflict with a core command.
 		_, _, err := cmd.Find([]string{extensionCmd.Name()})
 		if err == nil {
 			continue
 		}
-
 		cmd.AddCommand(extensionCmd)
 	}
 
@@ -204,10 +184,7 @@ func NewCmdRoot(f *cmdutil.Factory, version, buildDate string) (*cobra.Command, 
 			split, _ := shlex.Split(aliasName)
 			parentCmd, parentArgs, _ := cmd.Find(split)
 			if !parentCmd.ContainsGroup("alias") {
-				parentCmd.AddGroup(&cobra.Group{
-					ID:    "alias",
-					Title: "Alias commands",
-				})
+				parentCmd.AddGroup(&cobra.Group{ID: "alias", Title: "Alias commands"})
 			}
 			if strings.HasPrefix(aliasValue, "!") {
 				shellAliasCmd := NewCmdShellAlias(io, parentArgs[0], aliasValue)
@@ -229,11 +206,6 @@ func NewCmdRoot(f *cmdutil.Factory, version, buildDate string) (*cobra.Command, 
 
 	cmdutil.DisableAuthCheck(cmd)
 
-	// The reference command produces paged output that displays information on every other command.
-	// Therefore, we explicitly set the Long text and HelpFunc here after all other commands are registered.
-	// We experimented with producing the paged output dynamically when the HelpFunc is called but since
-	// doc generation makes use of the Long text, it is simpler to just be explicit here that this command
-	// is special.
 	referenceCmd.Long = stringifyReference(cmd)
 	referenceCmd.SetHelpFunc(longPager(f.IOStreams))
 	return cmd, nil
