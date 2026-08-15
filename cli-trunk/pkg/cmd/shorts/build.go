@@ -22,6 +22,8 @@ import (
 type buildOptions struct {
 	Output string
 	Model  string
+	Topic  string
+	Text   string
 }
 
 type githubIssue struct {
@@ -47,24 +49,33 @@ type shortsContent struct {
 func newBuildCmd(f *cmdutil.Factory) *cobra.Command {
 	opts := &buildOptions{}
 	cmd := &cobra.Command{
-		Use:   "build <id>",
-		Short: "Build a complete short-form content pack from a GitHub issue",
-		Args:  cobra.ExactArgs(1),
+		Use:   "build [id]",
+		Short: "Build a short-form content pack from an issue, topic, or text",
+		Args:  cobra.MaximumNArgs(1),
 		Example: `
   $ gh shorts build 42
-  $ gh shorts build 42 --output ./shorts/42
-  $ gh shorts build 42 --model gpt-4.1-mini
+  $ gh shorts build --topic "New AI feature in GitHub"
+  $ gh shorts build --text "Explain why AI agents matter for developers"
+  $ gh shorts build --topic "AI news" --output ./shorts/ai-news
 `,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			id, err := strconv.Atoi(args[0])
-			if err != nil || id < 1 {
-				return fmt.Errorf("invalid id %q; expected a GitHub issue number", args[0])
+			if len(args) == 1 {
+				id, err := strconv.Atoi(args[0])
+				if err != nil || id < 1 {
+					return fmt.Errorf("invalid id %q; expected a GitHub issue number", args[0])
+				}
+				return runBuild(cmd.Context(), f, id, opts)
 			}
-			return runBuild(cmd.Context(), f, id, opts)
+			if strings.TrimSpace(opts.Topic) == "" && strings.TrimSpace(opts.Text) == "" {
+				return errors.New("provide an issue id, --topic, or --text")
+			}
+			return runBuildFromInput(cmd.Context(), f, opts)
 		},
 	}
-	cmd.Flags().StringVarP(&opts.Output, "output", "o", "", "Output directory (default: .shorts/<id>)")
+	cmd.Flags().StringVarP(&opts.Output, "output", "o", "", "Output directory (default: .shorts/<id> or .shorts/generated-<timestamp>)")
 	cmd.Flags().StringVar(&opts.Model, "model", "", "AI model for an OpenAI-compatible API")
+	cmd.Flags().StringVar(&opts.Topic, "topic", "", "Topic to turn into a short")
+	cmd.Flags().StringVar(&opts.Text, "text", "", "Source text to turn into a short")
 	return cmd
 }
 
@@ -81,7 +92,23 @@ func runBuild(ctx context.Context, f *cmdutil.Factory, id int, opts *buildOption
 	if err != nil {
 		return err
 	}
+	return writeBuild(ctx, f, issue, id, opts)
+}
 
+func runBuildFromInput(ctx context.Context, f *cmdutil.Factory, opts *buildOptions) error {
+	title := strings.TrimSpace(opts.Topic)
+	body := strings.TrimSpace(opts.Text)
+	if title == "" {
+		title = "Short-form video"
+	}
+	if body == "" {
+		body = title
+	}
+	issue := &githubIssue{Title: title, Body: body}
+	return writeBuild(ctx, f, issue, 0, opts)
+}
+
+func writeBuild(ctx context.Context, f *cmdutil.Factory, issue *githubIssue, id int, opts *buildOptions) error {
 	content, aiGenerated, err := generateContent(ctx, issue, opts.Model)
 	if err != nil {
 		return err
@@ -93,7 +120,11 @@ func runBuild(ctx context.Context, f *cmdutil.Factory, id int, opts *buildOption
 
 	out := opts.Output
 	if out == "" {
-		out = filepath.Join(".shorts", strconv.Itoa(id))
+		if id > 0 {
+			out = filepath.Join(".shorts", strconv.Itoa(id))
+		} else {
+			out = filepath.Join(".shorts", "generated-"+time.Now().UTC().Format("20060102-150405"))
+		}
 	}
 	if err := os.MkdirAll(out, 0755); err != nil {
 		return fmt.Errorf("create output directory: %w", err)
@@ -116,8 +147,11 @@ func runBuild(ctx context.Context, f *cmdutil.Factory, id int, opts *buildOption
 		}
 	}
 
-	fmt.Fprintf(f.IOStreams.Out, "Built shorts content from issue #%d\n", id)
-	fmt.Fprintf(f.IOStreams.Out, "  source: %s\n", issue.HTML)
+	if id > 0 {
+		fmt.Fprintf(f.IOStreams.Out, "Built shorts content from issue #%d\n", id)
+	} else {
+		fmt.Fprintln(f.IOStreams.Out, "Built shorts content from direct input")
+	}
 	fmt.Fprintf(f.IOStreams.Out, "  output: %s\n", out)
 	fmt.Fprintf(f.IOStreams.Out, "  ai: %t\n", aiGenerated)
 	return nil
@@ -202,7 +236,7 @@ func generateContent(ctx context.Context, issue *githubIssue, modelOverride stri
 	if model == "" {
 		model = "gpt-4.1-mini"
 	}
-	prompt := "Create a factual, engaging 45-60 second vertical short from this GitHub issue. Return ONLY JSON with keys title, hook, script, description, hashtags (array), captions (object with youtube, tiktok, facebook). Do not invent facts not present in the source. Source title: " + issue.Title + "\nSource body:\n" + issue.Body
+	prompt := "Create a factual, engaging 45-60 second vertical short from this source. Return ONLY JSON with keys title, hook, script, description, hashtags (array), captions (object with youtube, tiktok, facebook). Do not invent facts not present in the source. Source title: " + issue.Title + "\nSource body:\n" + issue.Body
 	payload := map[string]any{
 		"model": model,
 		"messages": []map[string]string{{"role": "system", "content": "You are a short-form video producer."}, {"role": "user", "content": prompt}},
