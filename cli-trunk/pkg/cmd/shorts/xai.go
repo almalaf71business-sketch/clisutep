@@ -2,21 +2,25 @@ package shorts
 
 import "os"
 
-// xAI is wired into the existing OpenAI-compatible generator so gh shorts can
-// use Grok without adding another SDK dependency. XAI_API_KEY takes priority
-// over the legacy provider environment variables when it is present.
+// init configures the existing OpenAI-compatible generator for providers that
+// expose a compatible chat-completions API. Gemini is preferred because its
+// current Gemini 2.5 Flash model has a free tier; Grok remains supported when
+// Gemini is not configured.
 func init() {
-	if os.Getenv("XAI_API_KEY") == "" {
+	if key := os.Getenv("GEMINI_API_KEY"); key != "" {
+		_ = os.Setenv("SHORTS_AI_API_KEY", key)
+		_ = os.Setenv("SHORTS_AI_BASE_URL", "https://generativelanguage.googleapis.com/v1beta/openai")
+		if os.Getenv("SHORTS_AI_MODEL") == "" {
+			_ = os.Setenv("SHORTS_AI_MODEL", "gemini-2.5-flash")
+		}
 		return
 	}
 
-	if os.Getenv("SHORTS_AI_API_KEY") == "" {
-		_ = os.Setenv("SHORTS_AI_API_KEY", os.Getenv("XAI_API_KEY"))
-	}
-	if os.Getenv("SHORTS_AI_BASE_URL") == "" {
+	if key := os.Getenv("XAI_API_KEY"); key != "" {
+		_ = os.Setenv("SHORTS_AI_API_KEY", key)
 		_ = os.Setenv("SHORTS_AI_BASE_URL", "https://api.x.ai/v1")
-	}
-	if os.Getenv("SHORTS_AI_MODEL") == "" {
-		_ = os.Setenv("SHORTS_AI_MODEL", "grok-4.5")
+		if os.Getenv("SHORTS_AI_MODEL") == "" {
+			_ = os.Setenv("SHORTS_AI_MODEL", "grok-4.5")
+		}
 	}
 }
