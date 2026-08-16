@@ -6,6 +6,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io"
 	"net/http"
 	"net/url"
 	"os"
@@ -278,14 +279,14 @@ func generateAnthropic(ctx context.Context, apiKey, prompt, modelOverride string
 		model = strings.TrimSpace(os.Getenv("SHORTS_AI_MODEL"))
 	}
 	if model == "" {
-		model = "claude-sonnet-4-20250514"
+		model = "claude-sonnet-5"
 	}
 	payload := map[string]any{
-		"model": model,
-		"max_tokens": 1800,
+		"model":       model,
+		"max_tokens":  1800,
 		"temperature": 0.8,
-		"system": "You are an elite short-form video writer. Return only valid JSON matching the requested schema.",
-		"messages": []map[string]string{{"role": "user", "content": prompt}},
+		"system":      "You are an elite short-form video writer. Return only valid JSON matching the requested schema.",
+		"messages":    []map[string]string{{"role": "user", "content": prompt}},
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
@@ -304,7 +305,8 @@ func generateAnthropic(ctx context.Context, apiKey, prompt, modelOverride string
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return shortsContent{}, false, fmt.Errorf("Anthropic request: provider returned %s", resp.Status)
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return shortsContent{}, false, fmt.Errorf("Anthropic request: provider returned %s: %s", resp.Status, strings.TrimSpace(string(errBody)))
 	}
 	var result struct {
 		Content []struct {
@@ -338,7 +340,7 @@ func generateOpenAICompatible(ctx context.Context, apiKey, prompt, modelOverride
 			{"role": "system", "content": "You are an elite short-form video writer. Return only valid JSON matching the requested schema."},
 			{"role": "user", "content": prompt},
 		},
-		"temperature": 0.8,
+		"temperature":    0.8,
 		"response_format": map[string]string{"type": "json_object"},
 	}
 	body, err := json.Marshal(payload)
@@ -357,7 +359,8 @@ func generateOpenAICompatible(ctx context.Context, apiKey, prompt, modelOverride
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
-		return shortsContent{}, false, fmt.Errorf("AI request: provider returned %s", resp.Status)
+		errBody, _ := io.ReadAll(io.LimitReader(resp.Body, 4096))
+		return shortsContent{}, false, fmt.Errorf("AI request: provider returned %s: %s", resp.Status, strings.TrimSpace(string(errBody)))
 	}
 	var result struct {
 		Choices []struct {
