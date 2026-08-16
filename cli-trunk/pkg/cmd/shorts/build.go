@@ -74,7 +74,7 @@ func newBuildCmd(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&opts.Output, "output", "o", "", "Output directory (default: .shorts/<id> or .shorts/generated-<timestamp>)")
-	cmd.Flags().StringVar(&opts.Model, "model", "", "AI model (default: gpt-4.1-mini for OpenAI-compatible APIs)")
+	cmd.Flags().StringVar(&opts.Model, "model", "", "AI model (default depends on provider)")
 	cmd.Flags().StringVar(&opts.Topic, "topic", "", "Topic to turn into a short")
 	cmd.Flags().StringVar(&opts.Text, "text", "", "Source text to turn into a short")
 	cmd.Flags().BoolVar(&opts.NoAI, "no-ai", false, "Use the deterministic fallback instead of an AI provider")
@@ -143,9 +143,8 @@ func writeBuild(ctx context.Context, f *cmdutil.Factory, issue *githubIssue, id 
 		return fmt.Errorf("write script.md: %w", err)
 	}
 	for platform, caption := range content.Captions {
-		name := platform + ".txt"
-		if err := os.WriteFile(filepath.Join(out, name), []byte(caption+"\n"), 0644); err != nil {
-			return fmt.Errorf("write %s: %w", name, err)
+		if err := os.WriteFile(filepath.Join(out, platform+".txt"), []byte(caption+"\n"), 0644); err != nil {
+			return fmt.Errorf("write %s: %w", platform, err)
 		}
 	}
 
@@ -168,8 +167,7 @@ func currentRepo(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", errors.New("could not determine repository; run inside a git repository or set GH_REPO=OWNER/REPO")
 	}
-	s := strings.TrimSpace(string(out))
-	s = strings.TrimSuffix(s, ".git")
+	s := strings.TrimSuffix(strings.TrimSpace(string(out)), ".git")
 	if strings.HasPrefix(s, "git@github.com:") {
 		return strings.TrimPrefix(s, "git@github.com:"), nil
 	}
@@ -222,44 +220,19 @@ func fetchIssue(ctx context.Context, repo string, id int, token string) (*github
 	return &issue, nil
 }
 
-func generateContent(ctx context.Context, issue *githubIssue, modelOverride string, noAI bool) (shortsContent, bool, error) {
-	if noAI {
-		return fallbackContent(issue), false, nil
-	}
-
-	apiKey := strings.TrimSpace(os.Getenv("SHORTS_AI_API_KEY"))
-	if apiKey == "" {
-		apiKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
-	}
-	if apiKey == "" {
-		return shortsContent{}, false, errors.New("AI is required: set SHORTS_AI_API_KEY or OPENAI_API_KEY (use --no-ai only for the fallback)")
-	}
-
-	base := strings.TrimRight(os.Getenv("SHORTS_AI_BASE_URL"), "/")
-	if base == "" {
-		base = "https://api.openai.com/v1"
-	}
-	model := modelOverride
-	if model == "" {
-		model = os.Getenv("SHORTS_AI_MODEL")
-	}
-	if model == "" {
-		model = "gpt-4.1-mini"
-	}
-
-	prompt := `You are an elite short-form video writer and social media producer.
+const shortsPrompt = `You are an elite short-form video writer and social media producer.
 
 Create a professional 45-60 second vertical video package from the source below.
-The audience should understand the value within the first 2 seconds and want to keep watching.
+The audience must understand the value within the first 2 seconds and want to keep watching.
 Write naturally for spoken Arabic when the source/topic is Arabic; otherwise use the source language.
 
 Requirements:
-- Start with a strong curiosity-driven hook; no generic introductions.
-- Write a spoken script designed for 45-60 seconds, with short sentences and natural pacing.
-- Structure the script: HOOK -> VALUE/EXPLANATION -> 2-5 concrete points -> PAYOFF -> concise CTA.
-- Make every sentence useful for narration; avoid filler and corporate language.
+- Start with a strong curiosity-driven hook; never use generic introductions.
+- Write a spoken script for 45-60 seconds using short, natural sentences.
+- Structure: HOOK -> VALUE/EXPLANATION -> 2-5 concrete points -> PAYOFF -> concise CTA.
+- Every sentence must be useful for narration. Avoid filler and corporate language.
 - Keep factual claims grounded strictly in the source. Never invent statistics, names, dates, quotes, or capabilities.
-- Make the title punchy and platform-friendly without clickbait that contradicts the source.
+- Make the title punchy and platform-friendly without deceptive clickbait.
 - Produce a concise description and platform-ready captions.
 - Return 6-10 relevant hashtags, including #shorts when appropriate.
 - Return ONLY valid JSON matching the requested keys.
@@ -273,15 +246,96 @@ hashtags: array of strings
 captions: object with youtube, tiktok, facebook string values
 
 Source title:
-` + issue.Title + `
+`
 
-Source body:
-` + issue.Body
+func generateContent(ctx context.Context, issue *githubIssue, modelOverride string, noAI bool) (shortsContent, bool, error) {
+	if noAI {
+		return fallbackContent(issue), false, nil
+	}
 
+	apiKey := strings.TrimSpace(os.Getenv("SHORTS_AI_API_KEY"))
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("ANTHROPIC_API_KEY"))
+	}
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	}
+	if apiKey == "" {
+		return shortsContent{}, false, errors.New("AI is required: set SHORTS_AI_API_KEY, ANTHROPIC_API_KEY, or OPENAI_API_KEY")
+	}
+
+	prompt := shortsPrompt + issue.Title + "\n\nSource body:\n" + issue.Body
+
+	if strings.HasPrefix(apiKey, "sk-ant-") {
+		return generateAnthropic(ctx, apiKey, prompt, modelOverride)
+	}
+	return generateOpenAICompatible(ctx, apiKey, prompt, modelOverride)
+}
+
+func generateAnthropic(ctx context.Context, apiKey, prompt, modelOverride string) (shortsContent, bool, error) {
+	model := modelOverride
+	if model == "" {
+		model = strings.TrimSpace(os.Getenv("SHORTS_AI_MODEL"))
+	}
+	if model == "" {
+		model = "claude-sonnet-4-20250514"
+	}
+	payload := map[string]any{
+		"model": model,
+		"max_tokens": 1800,
+		"temperature": 0.8,
+		"system": "You are an elite short-form video writer. Return only valid JSON matching the requested schema.",
+		"messages": []map[string]string{{"role": "user", "content": prompt}},
+	}
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return shortsContent{}, false, fmt.Errorf("encode Anthropic request: %w", err)
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodPost, "https://api.anthropic.com/v1/messages", bytes.NewReader(body))
+	if err != nil {
+		return shortsContent{}, false, err
+	}
+	req.Header.Set("x-api-key", apiKey)
+	req.Header.Set("anthropic-version", "2023-06-01")
+	req.Header.Set("Content-Type", "application/json")
+	resp, err := http.DefaultClient.Do(req)
+	if err != nil {
+		return shortsContent{}, false, fmt.Errorf("Anthropic request: %w", err)
+	}
+	defer resp.Body.Close()
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return shortsContent{}, false, fmt.Errorf("Anthropic request: provider returned %s", resp.Status)
+	}
+	var result struct {
+		Content []struct {
+			Text string `json:"text"`
+		} `json:"content"`
+	}
+	if err := json.NewDecoder(resp.Body).Decode(&result); err != nil {
+		return shortsContent{}, false, fmt.Errorf("decode Anthropic response: %w", err)
+	}
+	if len(result.Content) == 0 || strings.TrimSpace(result.Content[0].Text) == "" {
+		return shortsContent{}, false, errors.New("Anthropic response did not contain content")
+	}
+	return parseGeneratedContent(result.Content[0].Text)
+}
+
+func generateOpenAICompatible(ctx context.Context, apiKey, prompt, modelOverride string) (shortsContent, bool, error) {
+	base := strings.TrimRight(os.Getenv("SHORTS_AI_BASE_URL"), "/")
+	if base == "" {
+		base = "https://api.openai.com/v1"
+	}
+	model := modelOverride
+	if model == "" {
+		model = strings.TrimSpace(os.Getenv("SHORTS_AI_MODEL"))
+	}
+	if model == "" {
+		model = "gpt-4.1-mini"
+	}
 	payload := map[string]any{
 		"model": model,
 		"messages": []map[string]string{
-			{"role": "system", "content": "You are an elite short-form video writer. Follow the user's JSON contract exactly."},
+			{"role": "system", "content": "You are an elite short-form video writer. Return only valid JSON matching the requested schema."},
 			{"role": "user", "content": prompt},
 		},
 		"temperature": 0.8,
@@ -291,7 +345,6 @@ Source body:
 	if err != nil {
 		return shortsContent{}, false, fmt.Errorf("encode AI request: %w", err)
 	}
-
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return shortsContent{}, false, err
@@ -306,7 +359,6 @@ Source body:
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return shortsContent{}, false, fmt.Errorf("AI request: provider returned %s", resp.Status)
 	}
-
 	var result struct {
 		Choices []struct {
 			Message struct {
@@ -320,9 +372,12 @@ Source body:
 	if len(result.Choices) == 0 || strings.TrimSpace(result.Choices[0].Message.Content) == "" {
 		return shortsContent{}, false, errors.New("AI response did not contain content")
 	}
+	return parseGeneratedContent(result.Choices[0].Message.Content)
+}
 
+func parseGeneratedContent(raw string) (shortsContent, bool, error) {
 	var content shortsContent
-	if err := json.Unmarshal([]byte(cleanJSON(result.Choices[0].Message.Content)), &content); err != nil {
+	if err := json.Unmarshal([]byte(cleanJSON(raw)), &content); err != nil {
 		return shortsContent{}, false, fmt.Errorf("decode generated content: %w", err)
 	}
 	if err := validateGeneratedContent(content); err != nil {
