@@ -24,6 +24,7 @@ type buildOptions struct {
 	Model  string
 	Topic  string
 	Text   string
+	NoAI   bool
 }
 
 type githubIssue struct {
@@ -50,7 +51,7 @@ func newBuildCmd(f *cmdutil.Factory) *cobra.Command {
 	opts := &buildOptions{}
 	cmd := &cobra.Command{
 		Use:   "build [id]",
-		Short: "Build a short-form content pack from an issue, topic, or text",
+		Short: "Build an AI-generated short-form content pack from an issue, topic, or text",
 		Args:  cobra.MaximumNArgs(1),
 		Example: `
   $ gh shorts build 42
@@ -73,9 +74,10 @@ func newBuildCmd(f *cmdutil.Factory) *cobra.Command {
 		},
 	}
 	cmd.Flags().StringVarP(&opts.Output, "output", "o", "", "Output directory (default: .shorts/<id> or .shorts/generated-<timestamp>)")
-	cmd.Flags().StringVar(&opts.Model, "model", "", "AI model for an OpenAI-compatible API")
+	cmd.Flags().StringVar(&opts.Model, "model", "", "AI model (default: gpt-4.1-mini for OpenAI-compatible APIs)")
 	cmd.Flags().StringVar(&opts.Topic, "topic", "", "Topic to turn into a short")
 	cmd.Flags().StringVar(&opts.Text, "text", "", "Source text to turn into a short")
+	cmd.Flags().BoolVar(&opts.NoAI, "no-ai", false, "Use the deterministic fallback instead of an AI provider")
 	return cmd
 }
 
@@ -109,7 +111,7 @@ func runBuildFromInput(ctx context.Context, f *cmdutil.Factory, opts *buildOptio
 }
 
 func writeBuild(ctx context.Context, f *cmdutil.Factory, issue *githubIssue, id int, opts *buildOptions) error {
-	content, aiGenerated, err := generateContent(ctx, issue, opts.Model)
+	content, aiGenerated, err := generateContent(ctx, issue, opts.Model, opts.NoAI)
 	if err != nil {
 		return err
 	}
@@ -220,11 +222,19 @@ func fetchIssue(ctx context.Context, repo string, id int, token string) (*github
 	return &issue, nil
 }
 
-func generateContent(ctx context.Context, issue *githubIssue, modelOverride string) (shortsContent, bool, error) {
-	apiKey := strings.TrimSpace(os.Getenv("SHORTS_AI_API_KEY"))
-	if apiKey == "" {
+func generateContent(ctx context.Context, issue *githubIssue, modelOverride string, noAI bool) (shortsContent, bool, error) {
+	if noAI {
 		return fallbackContent(issue), false, nil
 	}
+
+	apiKey := strings.TrimSpace(os.Getenv("SHORTS_AI_API_KEY"))
+	if apiKey == "" {
+		apiKey = strings.TrimSpace(os.Getenv("OPENAI_API_KEY"))
+	}
+	if apiKey == "" {
+		return shortsContent{}, false, errors.New("AI is required: set SHORTS_AI_API_KEY or OPENAI_API_KEY (use --no-ai only for the fallback)")
+	}
+
 	base := strings.TrimRight(os.Getenv("SHORTS_AI_BASE_URL"), "/")
 	if base == "" {
 		base = "https://api.openai.com/v1"
@@ -236,13 +246,52 @@ func generateContent(ctx context.Context, issue *githubIssue, modelOverride stri
 	if model == "" {
 		model = "gpt-4.1-mini"
 	}
-	prompt := "Create a factual, engaging 45-60 second vertical short from this source. Return ONLY JSON with keys title, hook, script, description, hashtags (array), captions (object with youtube, tiktok, facebook). Do not invent facts not present in the source. Source title: " + issue.Title + "\nSource body:\n" + issue.Body
+
+	prompt := `You are an elite short-form video writer and social media producer.
+
+Create a professional 45-60 second vertical video package from the source below.
+The audience should understand the value within the first 2 seconds and want to keep watching.
+Write naturally for spoken Arabic when the source/topic is Arabic; otherwise use the source language.
+
+Requirements:
+- Start with a strong curiosity-driven hook; no generic introductions.
+- Write a spoken script designed for 45-60 seconds, with short sentences and natural pacing.
+- Structure the script: HOOK -> VALUE/EXPLANATION -> 2-5 concrete points -> PAYOFF -> concise CTA.
+- Make every sentence useful for narration; avoid filler and corporate language.
+- Keep factual claims grounded strictly in the source. Never invent statistics, names, dates, quotes, or capabilities.
+- Make the title punchy and platform-friendly without clickbait that contradicts the source.
+- Produce a concise description and platform-ready captions.
+- Return 6-10 relevant hashtags, including #shorts when appropriate.
+- Return ONLY valid JSON matching the requested keys.
+
+JSON keys:
+title: string
+hook: string
+script: string
+description: string
+hashtags: array of strings
+captions: object with youtube, tiktok, facebook string values
+
+Source title:
+` + issue.Title + `
+
+Source body:
+` + issue.Body
+
 	payload := map[string]any{
 		"model": model,
-		"messages": []map[string]string{{"role": "system", "content": "You are a short-form video producer."}, {"role": "user", "content": prompt}},
-		"temperature": 0.7,
+		"messages": []map[string]string{
+			{"role": "system", "content": "You are an elite short-form video writer. Follow the user's JSON contract exactly."},
+			{"role": "user", "content": prompt},
+		},
+		"temperature": 0.8,
+		"response_format": map[string]string{"type": "json_object"},
 	}
-	body, _ := json.Marshal(payload)
+	body, err := json.Marshal(payload)
+	if err != nil {
+		return shortsContent{}, false, fmt.Errorf("encode AI request: %w", err)
+	}
+
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, base+"/chat/completions", bytes.NewReader(body))
 	if err != nil {
 		return shortsContent{}, false, err
@@ -257,6 +306,7 @@ func generateContent(ctx context.Context, issue *githubIssue, modelOverride stri
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return shortsContent{}, false, fmt.Errorf("AI request: provider returned %s", resp.Status)
 	}
+
 	var result struct {
 		Choices []struct {
 			Message struct {
@@ -270,11 +320,31 @@ func generateContent(ctx context.Context, issue *githubIssue, modelOverride stri
 	if len(result.Choices) == 0 || strings.TrimSpace(result.Choices[0].Message.Content) == "" {
 		return shortsContent{}, false, errors.New("AI response did not contain content")
 	}
+
 	var content shortsContent
 	if err := json.Unmarshal([]byte(cleanJSON(result.Choices[0].Message.Content)), &content); err != nil {
 		return shortsContent{}, false, fmt.Errorf("decode generated content: %w", err)
 	}
+	if err := validateGeneratedContent(content); err != nil {
+		return shortsContent{}, false, err
+	}
 	return content, true, nil
+}
+
+func validateGeneratedContent(content shortsContent) error {
+	if strings.TrimSpace(content.Title) == "" || strings.TrimSpace(content.Hook) == "" || strings.TrimSpace(content.Script) == "" {
+		return errors.New("AI response was incomplete: title, hook, and script are required")
+	}
+	if len([]rune(content.Script)) < 180 {
+		return errors.New("AI response was too short for a 45-60 second script")
+	}
+	if len(content.Hashtags) == 0 {
+		return errors.New("AI response did not include hashtags")
+	}
+	if len(content.Captions) == 0 {
+		return errors.New("AI response did not include platform captions")
+	}
+	return nil
 }
 
 func cleanJSON(s string) string {
