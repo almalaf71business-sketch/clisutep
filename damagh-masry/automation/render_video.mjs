@@ -84,7 +84,7 @@ const sceneDuration = duration / sceneManifest.scenes.length;
 const imageInputs = sceneManifest.scenes.flatMap((scene) => ["-loop", "1", "-t", sceneDuration.toFixed(3), "-i", scene.path]);
 const sceneFilters = sceneManifest.scenes.map((_, index) => {
   const frames = Math.ceil(sceneDuration * 30);
-  return `[${index + 1}:v]scale=1200:2134:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0008\\,1.09)':d=${frames}:s=1080x1920:fps=30,trim=duration=${sceneDuration.toFixed(3)},setpts=PTS-STARTPTS[v${index}]`;
+  return `[${index + 1}:v]scale=1200:2134:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0008\\,1.09)':d=${frames}:s=1080x1920:fps=30,setsar=1,trim=duration=${sceneDuration.toFixed(3)},setpts=PTS-STARTPTS[v${index}]`;
 });
 const concatInputs = sceneManifest.scenes.map((_, index) => `[v${index}]`).join("");
 const filter = [

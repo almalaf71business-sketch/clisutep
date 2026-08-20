@@ -17,14 +17,14 @@ const scenes = [];
 const selectedKeys = new Set();
 
 for (const [index, query] of queries.entries()) {
-  const response = await fetch(`https://commons.wikimedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(query)}&limit=15`, {
+  const response = await fetch(`https://commons.wikimedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(query)}&limit=15&thumbnail_width=1080`, {
     headers: { "user-agent": "DamaghMasryVideoBot/1.0 (educational YouTube automation)" },
   });
   if (response.status === 429) break;
   if (!response.ok) continue;
   const payload = await response.json();
   const candidates = (payload.pages || [])
-    .filter((page) => page.thumbnail?.url)
+    .filter((page) => page.thumbnail?.url && page.thumbnail.width >= 600 && page.thumbnail.height >= 400)
     .sort((a, b) => (b.thumbnail.width * b.thumbnail.height) - (a.thumbnail.width * a.thumbnail.height));
   const selected = candidates.find((candidate) => !selectedKeys.has(candidate.key));
   if (!selected) continue;
