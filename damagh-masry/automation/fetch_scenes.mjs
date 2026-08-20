@@ -12,10 +12,10 @@ for (const [index, query] of queries.entries()) {
   const response = await fetch(`https://commons.wikimedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(query)}&limit=15`, {
     headers: { "user-agent": "DamaghMasryVideoBot/1.0 (educational YouTube automation)" },
   });
-  if (!response.ok) continue;
+  if (!response.ok) throw new Error(`Commons search failed: ${response.status} ${await response.text()}`);
   const payload = await response.json();
   const candidates = (payload.pages || [])
-    .filter((page) => page.thumbnail?.url && ["image/jpeg", "image/png", "image/webp"].includes(page.thumbnail.mimetype))
+    .filter((page) => page.thumbnail?.url)
     .sort((a, b) => (b.thumbnail.width * b.thumbnail.height) - (a.thumbnail.width * a.thumbnail.height));
   const selected = candidates[0];
   if (!selected) continue;
@@ -24,7 +24,8 @@ for (const [index, query] of queries.entries()) {
     headers: { "user-agent": "DamaghMasryVideoBot/1.0 (educational YouTube automation)" },
   });
   if (!imageResponse.ok) continue;
-  const extension = selected.thumbnail.mimetype === "image/png" ? "png" : selected.thumbnail.mimetype === "image/webp" ? "webp" : "jpg";
+  const mime = imageResponse.headers.get("content-type") || selected.thumbnail.mimetype || "image/jpeg";
+  const extension = mime.includes("png") ? "png" : mime.includes("webp") ? "webp" : "jpg";
   const path = `work/scenes/scene-${String(index).padStart(2, "0")}.${extension}`;
   await fs.writeFile(path, Buffer.from(await imageResponse.arrayBuffer()));
   const source = `https://commons.wikimedia.org/wiki/${encodeURIComponent(selected.key)}`;
