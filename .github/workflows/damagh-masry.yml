@@ -1,6 +1,12 @@
 name: دماغ مصري - Generate and upload private video
 
 on:
+  push:
+    branches:
+      - codex/improve-damagh-video-quality
+    paths:
+      - "damagh-masry/automation/**"
+      - ".github/workflows/damagh-masry.yml"
   workflow_dispatch:
     inputs:
       topic:
