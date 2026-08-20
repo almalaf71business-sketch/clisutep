@@ -9,44 +9,32 @@ await fs.mkdir("work/scenes", { recursive: true });
 const scenes = [];
 
 for (const [index, query] of queries.entries()) {
-  const params = new URLSearchParams({
-    action: "query",
-    generator: "search",
-    gsrsearch: query,
-    gsrnamespace: "6",
-    gsrlimit: "12",
-    prop: "imageinfo",
-    iiprop: "url|mime|size|extmetadata",
-    iiurlwidth: "1400",
-    format: "json",
-    origin: "*",
-  });
-  const response = await fetch(`https://commons.wikimedia.org/w/api.php?${params}`, {
+  const response = await fetch(`https://commons.wikimedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(query)}&limit=15`, {
     headers: { "user-agent": "DamaghMasryVideoBot/1.0 (educational YouTube automation)" },
   });
   if (!response.ok) continue;
   const payload = await response.json();
-  const candidates = Object.values(payload.query?.pages || {})
-    .map((page) => ({ page, info: page.imageinfo?.[0] }))
-    .filter(({ info }) => info && ["image/jpeg", "image/png", "image/webp"].includes(info.mime) && info.width >= 900 && info.height >= 700)
-    .sort((a, b) => (b.info.width * b.info.height) - (a.info.width * a.info.height));
+  const candidates = (payload.pages || [])
+    .filter((page) => page.thumbnail?.url && ["image/jpeg", "image/png", "image/webp"].includes(page.thumbnail.mimetype))
+    .sort((a, b) => (b.thumbnail.width * b.thumbnail.height) - (a.thumbnail.width * a.thumbnail.height));
   const selected = candidates[0];
   if (!selected) continue;
-  const imageResponse = await fetch(selected.info.thumburl || selected.info.url, {
+  const imageUrl = selected.thumbnail.url.startsWith("//") ? `https:${selected.thumbnail.url}` : selected.thumbnail.url;
+  const imageResponse = await fetch(imageUrl, {
     headers: { "user-agent": "DamaghMasryVideoBot/1.0 (educational YouTube automation)" },
   });
   if (!imageResponse.ok) continue;
-  const extension = selected.info.mime === "image/png" ? "png" : selected.info.mime === "image/webp" ? "webp" : "jpg";
+  const extension = selected.thumbnail.mimetype === "image/png" ? "png" : selected.thumbnail.mimetype === "image/webp" ? "webp" : "jpg";
   const path = `work/scenes/scene-${String(index).padStart(2, "0")}.${extension}`;
   await fs.writeFile(path, Buffer.from(await imageResponse.arrayBuffer()));
-  const metadata = selected.info.extmetadata || {};
+  const source = `https://commons.wikimedia.org/wiki/${encodeURIComponent(selected.key)}`;
   scenes.push({
     path,
     query,
-    title: selected.page.title,
-    source: selected.info.descriptionurl,
-    artist: metadata.Artist?.value || "Wikimedia Commons contributor",
-    license: metadata.LicenseShortName?.value || "See source page",
+    title: selected.title,
+    source,
+    artist: "Wikimedia Commons contributor",
+    license: "See source page",
   });
 }
 
