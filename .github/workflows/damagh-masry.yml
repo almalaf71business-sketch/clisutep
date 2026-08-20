@@ -13,8 +13,6 @@ on:
         description: "موضوع الفيديو؛ اتركه فارغًا لاستخدام موضوع تلقائي"
         required: false
         type: string
-  schedule:
-    - cron: "0 15 * * *"
 
 permissions:
   contents: read
@@ -36,9 +34,6 @@ jobs:
       GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-3.6-flash' }}
       TTS_VOICE: ${{ secrets.TTS_VOICE || 'ar-EG-ShakirNeural' }}
       PYTHON_BINARY: .venv/bin/python
-      GOOGLE_YOUTUBE_CLIENT_ID: ${{ secrets.GOOGLE_YOUTUBE_CLIENT_ID }}
-      GOOGLE_YOUTUBE_CLIENT_SECRET: ${{ secrets.GOOGLE_YOUTUBE_CLIENT_SECRET }}
-      YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
     steps:
       - name: Checkout
         uses: actions/checkout@v4
@@ -59,6 +54,9 @@ jobs:
       - name: Generate Egyptian Arabic content
         run: node automation/generate_content.mjs
 
+      - name: Download real licensed visual scenes
+        run: node automation/fetch_scenes.mjs
+
       - name: Render animated MP4 with natural narration
         run: node automation/render_video.mjs
 
@@ -66,9 +64,6 @@ jobs:
         run: |
           test -s work/video.mp4
           ffprobe -v error -show_entries stream=codec_name,width,height -show_entries format=duration -of json work/video.mp4
-
-      - name: Upload as private YouTube video
-        run: node automation/upload_youtube.mjs
 
       - name: Save generated files for review
         if: always()

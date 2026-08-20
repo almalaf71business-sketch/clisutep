@@ -4,6 +4,7 @@ import { promisify } from "node:util";
 
 const exec = promisify(execFile);
 const content = JSON.parse(await fs.readFile("work/content.json", "utf8"));
+const sceneManifest = JSON.parse(await fs.readFile("work/scenes.json", "utf8"));
 const voice = process.env.TTS_VOICE || "ar-EG-ShakirNeural";
 const python = process.env.PYTHON_BINARY || "python";
 
@@ -78,25 +79,28 @@ const videoCodec = gpuAvailable
   ? ["-c:v", "h264_nvenc", "-preset", "p5", "-cq", "21"]
   : ["-c:v", "libx264", "-preset", "fast", "-crf", "21"];
 
-const titlePath = "work/title.txt";
+if (!sceneManifest.scenes?.length) throw new Error("No visual scenes were downloaded");
+const sceneDuration = duration / sceneManifest.scenes.length;
+const imageInputs = sceneManifest.scenes.flatMap((scene) => ["-loop", "1", "-t", sceneDuration.toFixed(3), "-i", scene.path]);
+const sceneFilters = sceneManifest.scenes.map((_, index) => {
+  const frames = Math.ceil(sceneDuration * 30);
+  return `[${index + 1}:v]scale=1200:2134:force_original_aspect_ratio=increase,crop=1080:1920,zoompan=z='min(zoom+0.0008\\,1.09)':d=${frames}:s=1080x1920:fps=30,trim=duration=${sceneDuration.toFixed(3)},setpts=PTS-STARTPTS[v${index}]`;
+});
+const concatInputs = sceneManifest.scenes.map((_, index) => `[v${index}]`).join("");
 const filter = [
-  [
-    "[0:v]drawgrid=w=120:h=120:t=2:c=0x18314f@0.22",
-    "drawbox=x='mod(t*95\\,1580)-500':y=230:w=500:h=500:c=0x00c2c7@0.13:t=fill",
-    "drawbox=x='1080-mod(t*65\\,1480)':y=1080:w=400:h=400:c=0xffb703@0.10:t=fill",
-    `drawtext=font='Noto Sans Arabic':textfile=${titlePath}:fontcolor=0x00e1e8:fontsize=58:x=(w-text_w)/2:y=150:box=1:boxcolor=0x07101f@0.82:boxborderw=28:text_shaping=1:enable='lt(t\\,4.5)'`,
-    "subtitles=work/captions.ass[v]",
-  ].join(","),
-  "[1:a]asplit=2[awave][anorm]",
-  "[awave]aformat=channel_layouts=mono,showwaves=s=900x150:mode=line:rate=30:colors=0x00e1e8@0.75,format=rgba[wave]",
-  "[v][wave]overlay=x=(W-w)/2:y=1480:format=auto[outv]",
-  "[anorm]loudnorm=I=-16:TP=-1.5:LRA=11[outa]",
+  ...sceneFilters,
+  `${concatInputs}concat=n=${sceneManifest.scenes.length}:v=1:a=0[scenes]`,
+  "[scenes]drawbox=x=0:y=0:w=iw:h=260:c=0x07101f@0.62:t=fill",
+  "drawbox=x=0:y=1420:w=iw:h=500:c=0x07101f@0.48:t=fill",
+  "drawtext=font='Noto Sans Arabic':textfile=work/title.txt:fontcolor=0x00e1e8:fontsize=56:x=(w-text_w)/2:y=105:box=1:boxcolor=0x07101f@0.75:boxborderw=24:text_shaping=1:enable='lt(t\\,4.5)'",
+  "subtitles=work/captions.ass[outv]",
+  "[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[outa]",
 ].join(";");
 
 await run("ffmpeg", [
   "-y",
-  "-f", "lavfi", "-i", "color=c=0x07101f:s=1080x1920:r=30",
   "-i", "work/voice.mp3",
+  ...imageInputs,
   "-filter_complex", filter,
   "-map", "[outv]", "-map", "[outa]",
   ...videoCodec,
