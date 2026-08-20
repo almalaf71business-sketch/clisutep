@@ -80,11 +80,13 @@ const videoCodec = gpuAvailable
 
 const titlePath = "work/title.txt";
 const filter = [
-  "[0:v]drawgrid=w=120:h=120:t=2:c=0x18314f@0.22",
-  "drawbox=x='mod(t*95\\,1580)-500':y=230:w=500:h=500:c=0x00c2c7@0.13:t=fill",
-  "drawbox=x='1080-mod(t*65\\,1480)':y=1080:w=400:h=400:c=0xffb703@0.10:t=fill",
-  `drawtext=font='Noto Sans Arabic':textfile=${titlePath}:fontcolor=0x00e1e8:fontsize=58:x=(w-text_w)/2:y=150:box=1:boxcolor=0x07101f@0.82:boxborderw=28:text_shaping=1:enable='lt(t\\,4.5)'`,
-  "subtitles=work/captions.ass[v]",
+  [
+    "[0:v]drawgrid=w=120:h=120:t=2:c=0x18314f@0.22",
+    "drawbox=x='mod(t*95\\,1580)-500':y=230:w=500:h=500:c=0x00c2c7@0.13:t=fill",
+    "drawbox=x='1080-mod(t*65\\,1480)':y=1080:w=400:h=400:c=0xffb703@0.10:t=fill",
+    `drawtext=font='Noto Sans Arabic':textfile=${titlePath}:fontcolor=0x00e1e8:fontsize=58:x=(w-text_w)/2:y=150:box=1:boxcolor=0x07101f@0.82:boxborderw=28:text_shaping=1:enable='lt(t\\,4.5)'`,
+    "subtitles=work/captions.ass[v]",
+  ].join(","),
   "[1:a]asplit=2[awave][anorm]",
   "[awave]aformat=channel_layouts=mono,showwaves=s=900x150:mode=line:rate=30:colors=0x00e1e8@0.75,format=rgba[wave]",
   "[v][wave]overlay=x=(W-w)/2:y=1480:format=auto[outv]",
