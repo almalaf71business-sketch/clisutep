@@ -103,6 +103,7 @@ await run("ffmpeg", [
   "-pix_fmt", "yuv420p",
   "-c:a", "aac", "-b:a", "192k",
   "-movflags", "+faststart",
+  "-t", duration.toFixed(3),
   "-shortest", "work/video.mp4",
 ]);
 
