@@ -13,9 +13,14 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: damagh-masry-video
+  cancel-in-progress: false
+
 jobs:
   create-private-video:
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     defaults:
       run:
         working-directory: damagh-masry
@@ -23,6 +28,8 @@ jobs:
       TOPIC: ${{ inputs.topic || 'أداة ذكاء اصطناعي مجانية مفيدة للمصريين' }}
       GEMINI_API_KEY: ${{ secrets.GEMINI_API_KEY }}
       GEMINI_MODEL: ${{ secrets.GEMINI_MODEL || 'gemini-3.6-flash' }}
+      TTS_VOICE: ${{ secrets.TTS_VOICE || 'ar-EG-ShakirNeural' }}
+      PYTHON_BINARY: .venv/bin/python
       GOOGLE_YOUTUBE_CLIENT_ID: ${{ secrets.GOOGLE_YOUTUBE_CLIENT_ID }}
       GOOGLE_YOUTUBE_CLIENT_SECRET: ${{ secrets.GOOGLE_YOUTUBE_CLIENT_SECRET }}
       YOUTUBE_REFRESH_TOKEN: ${{ secrets.YOUTUBE_REFRESH_TOKEN }}
@@ -35,23 +42,33 @@ jobs:
         with:
           node-version: 22
 
-      - name: Install video tools
+      - name: Install video and Arabic voice tools
         run: |
           sudo apt-get update
-          sudo apt-get install -y ffmpeg fonts-dejavu espeak-ng
+          sudo apt-get install -y ffmpeg fonts-noto-core python3-venv
+          python -m venv .venv
+          .venv/bin/python -m pip install --disable-pip-version-check edge-tts==7.2.3
+          fc-cache -f
 
       - name: Generate Egyptian Arabic content
         run: node automation/generate_content.mjs
 
-      - name: Render MP4
+      - name: Render animated MP4 with natural narration
         run: node automation/render_video.mjs
+
+      - name: Validate rendered video
+        run: |
+          test -s work/video.mp4
+          ffprobe -v error -show_entries stream=codec_name,width,height -show_entries format=duration -of json work/video.mp4
 
       - name: Upload as private YouTube video
         run: node automation/upload_youtube.mjs
 
       - name: Save generated files for review
+        if: always()
         uses: actions/upload-artifact@v4
         with:
           name: damagh-masry-video-${{ github.run_number }}
           path: damagh-masry/work/
+          if-no-files-found: warn
           retention-days: 14
