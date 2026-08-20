@@ -90,10 +90,12 @@ const concatInputs = sceneManifest.scenes.map((_, index) => `[v${index}]`).join(
 const filter = [
   ...sceneFilters,
   `${concatInputs}concat=n=${sceneManifest.scenes.length}:v=1:a=0[scenes]`,
-  "[scenes]drawbox=x=0:y=0:w=iw:h=260:c=0x07101f@0.62:t=fill",
-  "drawbox=x=0:y=1420:w=iw:h=500:c=0x07101f@0.48:t=fill",
-  "drawtext=font='Noto Sans Arabic':textfile=work/title.txt:fontcolor=0x00e1e8:fontsize=56:x=(w-text_w)/2:y=105:box=1:boxcolor=0x07101f@0.75:boxborderw=24:text_shaping=1:enable='lt(t\\,4.5)'",
-  "subtitles=work/captions.ass[outv]",
+  [
+    "[scenes]drawbox=x=0:y=0:w=iw:h=260:c=0x07101f@0.62:t=fill",
+    "drawbox=x=0:y=1420:w=iw:h=500:c=0x07101f@0.48:t=fill",
+    "drawtext=font='Noto Sans Arabic':textfile=work/title.txt:fontcolor=0x00e1e8:fontsize=56:x=(w-text_w)/2:y=105:box=1:boxcolor=0x07101f@0.75:boxborderw=24:text_shaping=1:enable='lt(t\\,4.5)'",
+    "subtitles=work/captions.ass[outv]",
+  ].join(","),
   "[0:a]loudnorm=I=-16:TP=-1.5:LRA=11[outa]",
 ].join(";");
 

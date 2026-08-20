@@ -1,12 +1,12 @@
 import fs from "node:fs/promises";
 
 const content = JSON.parse(await fs.readFile("work/content.json", "utf8"));
-const queries = Array.isArray(content.visualQueries) && content.visualQueries.length
-  ? content.visualQueries.slice(0, 7)
-  : ["artificial intelligence computer", "student studying laptop", "smartphone technology", "modern computer workspace", "digital assistant"];
+const requestedQueries = Array.isArray(content.visualQueries) ? content.visualQueries : [];
+const queries = [...requestedQueries, "student using laptop", "smartphone in hand", "modern computer workspace", "classroom presentation", "person reading documents", "technology office", "computer screen close up"];
 
 await fs.mkdir("work/scenes", { recursive: true });
 const scenes = [];
+const selectedKeys = new Set();
 
 for (const [index, query] of queries.entries()) {
   const response = await fetch(`https://commons.wikimedia.org/w/rest.php/v1/search/page?q=${encodeURIComponent(query)}&limit=15`, {
@@ -17,8 +17,9 @@ for (const [index, query] of queries.entries()) {
   const candidates = (payload.pages || [])
     .filter((page) => page.thumbnail?.url)
     .sort((a, b) => (b.thumbnail.width * b.thumbnail.height) - (a.thumbnail.width * a.thumbnail.height));
-  const selected = candidates[0];
+  const selected = candidates.find((candidate) => !selectedKeys.has(candidate.key));
   if (!selected) continue;
+  selectedKeys.add(selected.key);
   const imageUrl = selected.thumbnail.url.startsWith("//") ? `https:${selected.thumbnail.url}` : selected.thumbnail.url;
   const imageResponse = await fetch(imageUrl, {
     headers: { "user-agent": "DamaghMasryVideoBot/1.0 (educational YouTube automation)" },
@@ -37,9 +38,10 @@ for (const [index, query] of queries.entries()) {
     artist: "Wikimedia Commons contributor",
     license: "See source page",
   });
+  if (scenes.length >= 6) break;
 }
 
-if (scenes.length < 3) throw new Error(`Only ${scenes.length} usable Commons scenes were found`);
+if (scenes.length < 4) throw new Error(`Only ${scenes.length} usable Commons scenes were found`);
 await fs.writeFile("work/scenes.json", JSON.stringify({ scenes }, null, 2));
 await fs.writeFile("work/visual-sources.txt", scenes.map((scene, index) => `${index + 1}. ${scene.title} — ${scene.license} — ${scene.source}`).join("\n"));
 console.log(`Downloaded ${scenes.length} real visual scenes from Wikimedia Commons.`);
